@@ -247,5 +247,5 @@ pyngrok
 
 ## 👩‍💻 Author
 
-**Spoorthi Udgirkar**  
-Computer Vision Challenge Submission — AetherEdge Vehicle Analytics System
+**Spoorti Udgirkar**  
+Computer Vision Application
