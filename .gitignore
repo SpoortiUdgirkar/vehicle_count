@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+outputs/
+uploads/
+.ngrok_token
+*.egg-info/
+.env
+*.log
+# NOTE: datasets/video/cars.mp4 is intentionally NOT ignored
+# so it gets pushed to HuggingFace Spaces

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AetherEdge — Vehicle Counting & Flow Analysis</title>
+    <meta name="description" content="Real-time computer vision vehicle counting and line-crossing flow analysis.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="app-container">
+
+    <!-- ── Header ── -->
+    <header class="app-header">
+        <div class="brand">
+            <div class="logo-icon"><i class="fa-solid fa-car-side"></i></div>
+            <div>
+                <h1>AetherEdge Vehicle Analytics</h1>
+                <p class="subtitle">Computer Vision · Line-Crossing Counter · Flow Analysis</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <div class="status-pill" id="statusPill">
+                <span class="pulse-dot" id="statusDot"></span>
+                <span id="statusText">READY</span>
+            </div>
+            <button class="btn btn-upload" onclick="triggerFileInput()">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Attach Video
+            </button>
+            <input type="file" id="videoFileInput" accept="video/*" style="display:none" onchange="uploadVideoFile()">
+            <!-- Start / Stop — swaps based on state -->
+            <button class="btn btn-start" id="startBtn" onclick="startAnalysis()">
+                <i class="fa-solid fa-play"></i> Start Analysis
+            </button>
+            <button class="btn btn-stop" id="stopBtn" onclick="stopAnalysis()" style="display:none">
+                <i class="fa-solid fa-stop"></i> Stop
+            </button>
+            <button class="btn btn-secondary" onclick="resetAll()">
+                <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- ── KPI Grid ── -->
+    <section class="kpi-grid">
+        <div class="kpi-card highlight">
+            <div class="kpi-icon magenta"><i class="fa-solid fa-crosshairs"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Total Vehicles Crossed</span>
+                <span class="kpi-value" id="kpiTotal">0</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon emerald"><i class="fa-solid fa-car"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Cars</span>
+                <span class="kpi-value" id="kpiCars">0</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon amber"><i class="fa-solid fa-truck"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Heavy Vehicles</span>
+                <span class="kpi-value" id="kpiHeavy">0</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon cyan"><i class="fa-solid fa-bolt"></i></div>
+            <div class="kpi-data">
+                <span class="kpi-label">Processing Speed</span>
+                <span class="kpi-value"><span id="kpiFps">—</span> <small>FPS</small></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Main Workspace ── -->
+    <main class="workspace-grid">
+
+        <!-- Left: Controls -->
+        <aside class="control-panel glass-card">
+            <h3><i class="fa-solid fa-sliders"></i> Control &amp; Line Setup</h3>
+
+            <div class="upload-dropzone" id="dropzone" onclick="triggerFileInput()"
+                 ondrop="handleDrop(event)" ondragover="event.preventDefault()"
+                 ondragenter="document.getElementById('dropzone').classList.add('drag-over')"
+                 ondragleave="document.getElementById('dropzone').classList.remove('drag-over')">
+                <i class="fa-solid fa-folder-open"></i>
+                <div>
+                    <strong id="dropzoneLabel">Drag &amp; Drop or Click</strong>
+                    <p class="drop-hint">Supports .mp4 · .avi · .mov</p>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="confRange">
+                    <span>Detection Confidence</span>
+                    <span id="confVal" class="badge">0.42</span>
+                </label>
+                <input type="range" id="confRange" min="0.10" max="0.90" step="0.05" value="0.42"
+                       oninput="updateConfLabel()" onchange="updateConfig()">
+            </div>
+
+            <div class="control-group">
+                <label for="speedMode"><span>Speed Mode</span></label>
+                <select id="speedMode" onchange="updateConfig()">
+                    <option value="1" selected>Max Accuracy (every frame)</option>
+                    <option value="2">Fast (skip 1 frame)</option>
+                    <option value="3">Ultra-fast (skip 2 frames)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label><span>Virtual Counting Line</span></label>
+                <div class="coord-grid">
+                    <div>
+                        <span class="coord-tag">P1 (X, Y)</span>
+                        <div class="dual-input">
+                            <input type="number" id="p1x" value="220" onchange="updateConfig()">
+                            <input type="number" id="p1y" value="420" onchange="updateConfig()">
+                        </div>
+                    </div>
+                    <div>
+                        <span class="coord-tag">P2 (X, Y)</span>
+                        <div class="dual-input">
+                            <input type="number" id="p2x" value="1080" onchange="updateConfig()">
+                            <input type="number" id="p2y" value="420" onchange="updateConfig()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label><span>Counting Direction</span></label>
+                <select id="directionSelect" onchange="updateConfig()">
+                    <option value="top_to_bottom" selected>↓ Top to Bottom</option>
+                    <option value="bottom_to_top">↑ Bottom to Top</option>
+                </select>
+            </div>
+
+            <!-- Breakdown bars -->
+            <div class="breakdown-box">
+                <h4><i class="fa-solid fa-chart-pie"></i> Vehicle Breakdown</h4>
+                <div class="bar-item">
+                    <div class="bar-header"><span>Cars</span><span id="carsPercent" class="badge-sm">0%</span></div>
+                    <div class="progress-bar"><div class="fill emerald" id="carsBar" style="width:0%"></div></div>
+                </div>
+                <div class="bar-item">
+                    <div class="bar-header"><span>Trucks &amp; Buses</span><span id="heavyPercent" class="badge-sm">0%</span></div>
+                    <div class="progress-bar"><div class="fill amber" id="heavyBar" style="width:0%"></div></div>
+                </div>
+                <div class="bar-item">
+                    <div class="bar-header"><span>↓ Top→Bottom</span><span id="ttbPercent" class="badge-sm">0%</span></div>
+                    <div class="progress-bar"><div class="fill cyan" id="ttbBar" style="width:0%"></div></div>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-section">
+                <div class="bar-header">
+                    <span>Video Progress</span>
+                    <span id="progressPct" class="badge-sm">0%</span>
+                </div>
+                <div class="progress-bar"><div class="fill magenta" id="progressBar" style="width:0%"></div></div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px" id="videoTimecode">—</div>
+            </div>
+        </aside>
+
+        <!-- Centre: Video -->
+        <section class="video-container glass-card">
+            <div class="video-header">
+                <div class="video-title">
+                    <i class="fa-solid fa-video"></i>
+                    <span>Feed: <strong id="videoNameDisplay">cars.mp4</strong></span>
+                </div>
+                <span class="live-badge" id="liveBadge" style="display:none">
+                    <i class="fa-solid fa-circle blink"></i> TRACKING ON
+                </span>
+                <span class="ready-badge" id="readyBadge">
+                    <i class="fa-solid fa-circle-pause"></i> READY
+                </span>
+            </div>
+            <div class="video-viewport">
+                <img id="videoStream" src="/api/stream" alt="Vehicle tracking stream">
+            </div>
+        </section>
+
+        <!-- Right: Alert + Event log -->
+        <aside class="right-panel">
+            <div class="alert-banner glass-card" id="alertBanner" style="display:none">
+                <div class="alert-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="alert-body">
+                    <strong id="alertTitle">VEHICLE CROSSED</strong>
+                    <span id="alertDetail">—</span>
+                </div>
+            </div>
+
+            <section class="event-panel glass-card" style="flex:1">
+                <div class="panel-header">
+                    <h3><i class="fa-solid fa-list-check"></i> Crossing Events</h3>
+                    <span class="log-count" id="logCount">0 events</span>
+                </div>
+                <div class="table-scroll">
+                    <table class="event-table">
+                        <thead><tr><th>Time</th><th>ID</th><th>Class</th><th>Dir</th><th>Status</th></tr></thead>
+                        <tbody id="eventTableBody">
+                            <tr><td colspan="5" class="empty-state">Press Start Analysis to begin…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </aside>
+    </main>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     RESULTS MODAL — shown when analysis finishes
+     ══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="resultsBackdrop" style="display:none">
+    <div class="results-modal">
+        <div class="results-header">
+            <div class="results-icon"><i class="fa-solid fa-flag-checkered"></i></div>
+            <div>
+                <h2>Analysis Complete</h2>
+                <p id="resultsVideoName">cars.mp4</p>
+            </div>
+        </div>
+
+        <div class="results-kpi-row">
+            <div class="results-kpi">
+                <span class="rk-val" id="rTotal">0</span>
+                <span class="rk-label">Total Crossings</span>
+            </div>
+            <div class="results-kpi">
+                <span class="rk-val emerald" id="rCars">0</span>
+                <span class="rk-label">Cars</span>
+            </div>
+            <div class="results-kpi">
+                <span class="rk-val amber" id="rHeavy">0</span>
+                <span class="rk-label">Trucks / Buses</span>
+            </div>
+            <div class="results-kpi">
+                <span class="rk-val cyan" id="rDuration">—</span>
+                <span class="rk-label">Video Duration</span>
+            </div>
+        </div>
+
+        <div class="results-breakdown">
+            <div class="rb-row">
+                <span>↓ Top → Bottom</span>
+                <strong id="rTTB">0</strong>
+            </div>
+            <div class="rb-row">
+                <span>↑ Bottom → Top</span>
+                <strong id="rBTT">0</strong>
+            </div>
+        </div>
+
+        <div class="results-actions">
+            <a href="/api/download_video" class="btn btn-video-download btn-lg">
+                <i class="fa-solid fa-file-video"></i> Download Annotated Video
+            </a>
+            <a href="/api/export_csv" class="btn btn-primary btn-lg">
+                <i class="fa-solid fa-file-csv"></i> Export CSV Log
+            </a>
+            <a href="/api/export_json" class="btn btn-json btn-lg">
+                <i class="fa-solid fa-file-code"></i> Export JSON Summary
+            </a>
+        </div>
+
+        <div class="results-footer">
+            <button class="btn btn-secondary" onclick="closeResults()">
+                <i class="fa-solid fa-eye"></i> Keep Viewing Dashboard
+            </button>
+            <button class="btn btn-start btn-lg" onclick="runAgain()">
+                <i class="fa-solid fa-rotate-right"></i> Run Again
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
